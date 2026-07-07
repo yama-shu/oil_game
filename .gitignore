@@ -5,6 +5,9 @@ node_modules/
 dist/
 coverage/
 
+# スモークテストのスクリーンショット出力
+smoke-output/
+
 # エディタ・OS 固有ファイル
 .DS_Store
 .idea/
