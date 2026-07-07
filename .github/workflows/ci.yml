@@ -1,0 +1,29 @@
+# プッシュ・プルリクエストごとに品質チェックを自動実行する CI。
+# 内容は手元の scripts/check.sh と同一 (型チェック → 単体テスト → ビルド)。
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: 依存関係のインストール
+        run: npm ci
+
+      - name: 型チェック・単体テスト・ビルド
+        run: ./scripts/check.sh
+
+      # 本番配信イメージが壊れていないことも検証する
+      - name: Docker イメージのビルド確認
+        run: docker build -t oil-game:ci .
