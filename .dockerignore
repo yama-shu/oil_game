@@ -1,0 +1,9 @@
+# ビルドコンテキストに含めないもの
+node_modules
+dist
+smoke-output
+.git
+*.log
+.DS_Store
+README.md
+docs

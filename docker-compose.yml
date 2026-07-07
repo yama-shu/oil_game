@@ -1,0 +1,27 @@
+# ローカル実行用の Docker Compose 定義。
+#
+#   docker compose up app   ... 本番相当 (ビルド済み静的ファイルを nginx で配信)
+#   docker compose up dev   ... 開発サーバ (ホットリロード付き)
+#
+# Node を手元にインストールしなくても、Docker さえあれば動かせる。
+services:
+  # 本番相当の配信を確認する用途
+  app:
+    build: .
+    ports:
+      - "8080:80"
+
+  # 開発用: ソースをマウントして vite のホットリロードを使う
+  dev:
+    image: node:24-slim
+    working_dir: /app
+    command: sh -c "npm ci && npm run dev"
+    volumes:
+      - .:/app
+      # ホスト側の node_modules (macOS 用バイナリ) とコンテナ内を分離する
+      - node_modules:/app/node_modules
+    ports:
+      - "5173:5173"
+
+volumes:
+  node_modules:
