@@ -2,13 +2,13 @@
 
 ラーメンの上に浮いた油を箸でつついて、小さい油を合体させてひとつの大きな油にする暇つぶしゲーム。
 モバイルブラウザでのタッチ操作を前提にした Web アプリとして実装している
-(PC のマウス操作でも遊べる)。
+(PC のマウス操作でも遊べる)。描画は three.js による 3D 表現。
 
 Steam の [『油』](https://store.steampowered.com/app/2444000/_/?l=japanese) にインスパイアされた習作。
 
-| 開始直後 | つついて合体させたあと |
+| 開始直後 | 箸でつついているところ |
 | --- | --- |
-| ![開始直後](docs/images/screenshot_initial.png) | ![合体後](docs/images/screenshot_merged.png) |
+| ![開始直後](docs/images/screenshot_3d_initial.png) | ![箸でつつく](docs/images/screenshot_3d_chopsticks.png) |
 
 ## 遊び方
 
@@ -58,8 +58,11 @@ npm run preview   # ビルド結果をローカルで確認
 | `blobs` | 初期の油の個数 | 24 | 2〜80 |
 | `seed` | 乱数シード。同じ値なら同じ初期配置になる | 現在時刻 | 0〜2^31-1 |
 | `log` | ログレベル (`debug` / `info` / `warn` / `error`) | `info` | - |
+| `renderer` | 描画方式 (`3d` = three.js / `2d` = Canvas 2D) | `3d` | - |
 
 例: `http://localhost:5173/?blobs=40&seed=123&log=debug`
+
+WebGL が使えない端末では自動的に 2D 描画へフォールバックする。
 
 ## テスト
 
