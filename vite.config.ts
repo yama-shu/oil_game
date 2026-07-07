@@ -9,5 +9,14 @@ export default defineConfig({
   build: {
     outDir: "dist",
     sourcemap: true,
+    rollupOptions: {
+      output: {
+        // three.js は大きいので分割し、ゲーム本体の更新時に
+        // ブラウザキャッシュが効き続けるようにする
+        manualChunks: {
+          three: ["three"],
+        },
+      },
+    },
   },
 });
