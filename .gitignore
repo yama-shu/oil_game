@@ -1,0 +1,17 @@
+# 依存パッケージ (package-lock.json から復元可能なため管理しない)
+node_modules/
+
+# ビルド成果物 (ソースから生成できるため管理しない)
+dist/
+coverage/
+
+# エディタ・OS 固有ファイル
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# ログ・一時ファイル
+*.log
+npm-debug.log*
+.env.local
