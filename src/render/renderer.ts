@@ -230,7 +230,9 @@ export class Renderer {
     ctx.arc(params.bowlCenter.x, params.bowlCenter.y, params.bowlRadius, 0, Math.PI * 2);
     ctx.clip();
     for (const ripple of this.ripples) {
-      const t = (nowSec - ripple.bornAt) / RIPPLE_LIFETIME_SEC;
+      // ポインタイベント時刻 (performance.now) は直後の rAF タイムスタンプより
+      // わずかに未来になることがあり、t が負だと arc() が例外を投げるため 0 に丸める
+      const t = Math.max(0, (nowSec - ripple.bornAt) / RIPPLE_LIFETIME_SEC);
       ctx.beginPath();
       ctx.arc(ripple.pos.x, ripple.pos.y, ripple.maxRadius * t, 0, Math.PI * 2);
       ctx.strokeStyle = COLORS.ripple;
