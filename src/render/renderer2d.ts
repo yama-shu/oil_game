@@ -2,6 +2,7 @@ import type { OilBlob } from "../core/blob";
 import { radiusOf } from "../core/blob";
 import type { Chopstick, WorldParams, WorldState } from "../core/world";
 import type { Vec2 } from "../core/vec2";
+import type { GameRenderer } from "./types";
 
 /** 合体・タッチ時に広がる波紋 (見た目だけの演出で物理には影響しない) */
 export interface Ripple {
@@ -31,7 +32,7 @@ const COLORS = {
  * Canvas 2D への描画を担当する。
  * ゲーム状態 (WorldState) を受け取って描くだけで、状態を変更しない。
  */
-export class Renderer {
+export class CanvasRenderer implements GameRenderer {
   private readonly ctx: CanvasRenderingContext2D;
   private ripples: Ripple[] = [];
 
@@ -55,6 +56,11 @@ export class Renderer {
 
   addRipple(pos: Vec2, nowSec: number, maxRadius: number): void {
     this.ripples.push({ pos: { ...pos }, bornAt: nowSec, maxRadius });
+  }
+
+  /** 2D 描画ではスクリーン座標と物理座標が一致する */
+  screenToWorld(pos: Vec2): Vec2 {
+    return { ...pos };
   }
 
   draw(

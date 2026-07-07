@@ -10,7 +10,8 @@ import type { Vec2 } from "../core/vec2";
  */
 export class PointerInput {
   private current: Vec2 | null = null;
-  private previous: Vec2 | null = null;
+  /** 前フレームの物理座標系での位置。速度は物理座標系で算出する */
+  private previousWorld: Vec2 | null = null;
   private smoothedVel: Vec2 = { x: 0, y: 0 };
 
   /** ポインタが押された瞬間に呼ばれるコールバック (つつき回数の記録用) */
@@ -37,7 +38,7 @@ export class PointerInput {
     if (this.current !== null) return;
     this.element.setPointerCapture(e.pointerId);
     this.current = this.toLocal(e);
-    this.previous = { ...this.current };
+    this.previousWorld = null;
     this.smoothedVel = { x: 0, y: 0 };
     this.onPokeStart?.(this.current);
   };
@@ -51,7 +52,7 @@ export class PointerInput {
   private readonly handleUp = (e: PointerEvent): void => {
     if (!e.isPrimary) return;
     this.current = null;
-    this.previous = null;
+    this.previousWorld = null;
     this.smoothedVel = { x: 0, y: 0 };
   };
 
@@ -61,17 +62,20 @@ export class PointerInput {
   }
 
   /**
-   * 毎フレーム呼び、現在の箸の状態を返す。触れていなければ null。
+   * 毎フレーム呼び、現在の箸の状態を物理座標系で返す。触れていなければ null。
    * dt: 前フレームからの経過秒
+   * toWorld: スクリーン座標 → 物理座標の変換 (3D 描画時はレイキャスト投影)。
+   *          速度も変換後の座標系で算出する。
    */
-  sample(dt: number): Chopstick | null {
+  sample(dt: number, toWorld: (p: Vec2) => Vec2 = (p) => p): Chopstick | null {
     if (this.current === null) {
       return null;
     }
-    if (this.previous !== null && dt > 0) {
+    const world = toWorld(this.current);
+    if (this.previousWorld !== null && dt > 0) {
       const rawVel = {
-        x: (this.current.x - this.previous.x) / dt,
-        y: (this.current.y - this.previous.y) / dt,
+        x: (world.x - this.previousWorld.x) / dt,
+        y: (world.y - this.previousWorld.y) / dt,
       };
       const alpha = 0.35; // 平滑化係数。大きいほど機敏、小さいほど滑らか
       this.smoothedVel = {
@@ -79,7 +83,7 @@ export class PointerInput {
         y: this.smoothedVel.y + (rawVel.y - this.smoothedVel.y) * alpha,
       };
     }
-    this.previous = { ...this.current };
-    return { pos: { ...this.current }, vel: { ...this.smoothedVel } };
+    this.previousWorld = world;
+    return { pos: { ...world }, vel: { ...this.smoothedVel } };
   }
 }

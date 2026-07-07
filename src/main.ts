@@ -5,7 +5,8 @@ import type { WorldParams, WorldState } from "./core/world";
 import { addPoke, createWorld, stepWorld } from "./core/world";
 import { PointerInput } from "./input/pointer";
 import { createLogger } from "./logger";
-import { Renderer } from "./render/renderer";
+import { CanvasRenderer } from "./render/renderer2d";
+import type { GameRenderer } from "./render/types";
 import { Hud } from "./ui/hud";
 
 /**
@@ -25,7 +26,7 @@ function main(): void {
   const canvas = document.createElement("canvas");
   app.appendChild(canvas);
 
-  const renderer = new Renderer(canvas);
+  const renderer: GameRenderer = new CanvasRenderer(canvas);
   const hud = new Hud(app);
   const input = new PointerInput(canvas);
 
@@ -66,8 +67,13 @@ function main(): void {
 
   input.onPokeStart = (pos) => {
     addPoke(world);
-    renderer.addRipple(pos, performance.now() / 1000, params.pokeRadius * 2.2);
-    logger.debug("つつき", pos);
+    const worldPos = renderer.screenToWorld(pos);
+    renderer.addRipple(
+      worldPos,
+      performance.now() / 1000,
+      params.pokeRadius * 2.2,
+    );
+    logger.debug("つつき", worldPos);
   };
 
   function handleResize(): void {
@@ -101,7 +107,7 @@ function main(): void {
     lastTime = now;
     const nowSec = now / 1000;
 
-    const chopstick = input.sample(dt);
+    const chopstick = input.sample(dt, (p) => renderer.screenToWorld(p));
     stepWorld(world, params, chopstick, dt);
 
     // 合体の瞬間に波紋を出す (大きい油ほど大きい波紋)
