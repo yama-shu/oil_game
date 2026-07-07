@@ -53,13 +53,16 @@ try {
   page.on("pageerror", (err) => errors.push(String(err)));
 
   // シード固定で再現性のある配置にする
-  await page.goto(`${BASE_URL}/?seed=42&blobs=${INITIAL_BLOBS}`);
+  const query = process.env.EXTRA_QUERY ?? "";
+  await page.goto(`${BASE_URL}/?seed=42&blobs=${INITIAL_BLOBS}${query}`);
   await page.waitForTimeout(1500);
 
+  // 表面張力により放置でも少しずつ合体する仕様のため、厳密に一致ではなく
+  // 「指定個数以下・かつ大半が残っている」ことを確認する
   const initialCount = parseBlobCount(await page.textContent("#app"));
   await page.screenshot({ path: `${OUT_DIR}/1_initial.png` });
-  if (initialCount !== INITIAL_BLOBS) {
-    throw new Error(`初期の油の数が不正: ${initialCount} (期待: ${INITIAL_BLOBS})`);
+  if (initialCount > INITIAL_BLOBS || initialCount < INITIAL_BLOBS / 2) {
+    throw new Error(`初期の油の数が不正: ${initialCount} (期待: ${INITIAL_BLOBS}個前後)`);
   }
 
   // 丼の中心付近を横切るドラッグ (箸でつつく) を3回行う
@@ -90,12 +93,12 @@ try {
     );
   }
 
-  // リセットで初期個数に戻ること
+  // リセットで初期個数付近に戻ること (リセット直後にも自然合体が起こり得る)
   await page.click("text=やり直す");
   await page.waitForTimeout(500);
   const resetCount = parseBlobCount(await page.textContent("#app"));
   await page.screenshot({ path: `${OUT_DIR}/3_after_reset.png` });
-  if (resetCount !== INITIAL_BLOBS) {
+  if (resetCount <= afterCount || resetCount > INITIAL_BLOBS) {
     throw new Error(`リセット後の油の数が不正: ${resetCount}`);
   }
 

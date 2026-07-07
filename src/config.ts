@@ -13,16 +13,21 @@ export interface GameConfig {
   seed: number;
   /** ログレベル */
   logLevel: LogLevel;
+  /** 描画方式。3d = three.js (既定)、2d = Canvas 2D (フォールバック) */
+  renderer: RendererKind;
 }
 
 export type LogLevel = "debug" | "info" | "warn" | "error";
+export type RendererKind = "2d" | "3d";
 
 const LOG_LEVELS: readonly LogLevel[] = ["debug", "info", "warn", "error"];
+const RENDERER_KINDS: readonly RendererKind[] = ["2d", "3d"];
 
 export const DEFAULT_CONFIG: GameConfig = {
   initialBlobCount: 24,
   seed: Date.now() % 2 ** 31,
   logLevel: "info",
+  renderer: "3d",
 };
 
 /** 油の個数として受け付ける範囲。多すぎると低スペック端末で処理落ちする */
@@ -62,6 +67,16 @@ export function parseLogLevelParam(
   return fallback;
 }
 
+export function parseRendererParam(
+  raw: string | null,
+  fallback: RendererKind,
+): RendererKind {
+  if (raw !== null && (RENDERER_KINDS as readonly string[]).includes(raw)) {
+    return raw as RendererKind;
+  }
+  return fallback;
+}
+
 /** URLSearchParams から設定を構築する */
 export function loadConfig(params: URLSearchParams): GameConfig {
   return {
@@ -78,5 +93,9 @@ export function loadConfig(params: URLSearchParams): GameConfig {
       DEFAULT_CONFIG.seed,
     ),
     logLevel: parseLogLevelParam(params.get("log"), DEFAULT_CONFIG.logLevel),
+    renderer: parseRendererParam(
+      params.get("renderer"),
+      DEFAULT_CONFIG.renderer,
+    ),
   };
 }

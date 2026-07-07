@@ -3,10 +3,40 @@ import { radiusOf } from "./core/blob";
 import { createRng } from "./core/rng";
 import type { WorldParams, WorldState } from "./core/world";
 import { addPoke, createWorld, stepWorld } from "./core/world";
+import type { RendererKind } from "./config";
 import { PointerInput } from "./input/pointer";
+import type { Logger } from "./logger";
 import { createLogger } from "./logger";
-import { Renderer } from "./render/renderer";
+import { CanvasRenderer } from "./render/renderer2d";
+import { ThreeRenderer } from "./render/renderer3d";
+import type { GameRenderer } from "./render/types";
 import { Hud } from "./ui/hud";
+
+/**
+ * 描画方式に応じたレンダラを生成する。
+ * WebGL が使えない端末では three.js の初期化が失敗するため、
+ * その場合は canvas を作り直して Canvas 2D にフォールバックする。
+ */
+function createRenderer(
+  kind: RendererKind,
+  app: HTMLElement,
+  logger: Logger,
+): { renderer: GameRenderer; canvas: HTMLCanvasElement } {
+  const canvas = document.createElement("canvas");
+  app.appendChild(canvas);
+  if (kind === "3d") {
+    try {
+      return { renderer: new ThreeRenderer(canvas), canvas };
+    } catch (err) {
+      logger.warn("3D 描画の初期化に失敗したため 2D 描画に切り替えます", err);
+      canvas.remove();
+      const fallback = document.createElement("canvas");
+      app.appendChild(fallback);
+      return { renderer: new CanvasRenderer(fallback), canvas: fallback };
+    }
+  }
+  return { renderer: new CanvasRenderer(canvas), canvas };
+}
 
 /**
  * エントリポイント。
@@ -22,10 +52,7 @@ function main(): void {
     throw new Error("#app 要素が見つかりません (index.html を確認してください)");
   }
 
-  const canvas = document.createElement("canvas");
-  app.appendChild(canvas);
-
-  const renderer = new Renderer(canvas);
+  const { renderer, canvas } = createRenderer(config.renderer, app, logger);
   const hud = new Hud(app);
   const input = new PointerInput(canvas);
 
@@ -66,8 +93,13 @@ function main(): void {
 
   input.onPokeStart = (pos) => {
     addPoke(world);
-    renderer.addRipple(pos, performance.now() / 1000, params.pokeRadius * 2.2);
-    logger.debug("つつき", pos);
+    const worldPos = renderer.screenToWorld(pos);
+    renderer.addRipple(
+      worldPos,
+      performance.now() / 1000,
+      params.pokeRadius * 2.2,
+    );
+    logger.debug("つつき", worldPos);
   };
 
   function handleResize(): void {
@@ -101,7 +133,7 @@ function main(): void {
     lastTime = now;
     const nowSec = now / 1000;
 
-    const chopstick = input.sample(dt);
+    const chopstick = input.sample(dt, (p) => renderer.screenToWorld(p));
     stepWorld(world, params, chopstick, dt);
 
     // 合体の瞬間に波紋を出す (大きい油ほど大きい波紋)

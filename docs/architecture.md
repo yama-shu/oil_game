@@ -15,9 +15,30 @@ src/
 │   ├── rng.ts       シード指定可能な擬似乱数 (mulberry32)
 │   ├── blob.ts      油の粒の定義と合体処理
 │   └── world.ts     物理シミュレーションとゲーム進行
-├── render/          Canvas 描画層 (状態を読むだけで変更しない)
+├── render/          描画層 (状態を読むだけで変更しない)
+│   ├── types.ts     GameRenderer インターフェース
+│   ├── renderer2d.ts  Canvas 2D 実装 (フォールバック用)
+│   └── renderer3d.ts  three.js 実装 (既定)
 ├── input/           タッチ/マウス → 箸の位置・速度への変換
 └── ui/              HUD (DOM)。スコア表示・リセット・ベスト記録
+```
+
+## 3D 描画の座標系
+
+物理シミュレーションは 2D のまま変えず、描画だけを 3D 化している。
+物理座標 (x, y) は three.js シーンのスープ面 (y=0 平面) 上の (x, z) に対応し、
+丼の中心をシーン原点に置く。
+
+カメラは斜め上から見下ろすため、**タッチしたスクリーン座標と物理座標が
+一致しない**。`GameRenderer.screenToWorld()` がこの変換を担い、3D 実装では
+カメラからのレイをスープ面に交差させて求める (2D 実装では恒等変換)。
+
+```mermaid
+flowchart LR
+    Touch["タッチ座標<br>(スクリーン px)"] --> Ray["カメラからレイを飛ばす<br>Raycaster.setFromCamera"]
+    Ray --> Hit["スープ面 (y=0) との交点"]
+    Hit --> World["物理座標<br>(丼中心オフセットを加算)"]
+    World --> Physics["箸の位置・速度として<br>物理シミュレーションへ"]
 ```
 
 ## ゲームループの処理の流れ

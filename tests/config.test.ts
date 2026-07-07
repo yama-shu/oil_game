@@ -6,6 +6,7 @@ import {
   loadConfig,
   parseIntParam,
   parseLogLevelParam,
+  parseRendererParam,
 } from "../src/config";
 
 describe("parseIntParam", () => {
@@ -43,12 +44,24 @@ describe("parseLogLevelParam", () => {
   });
 });
 
+describe("parseRendererParam", () => {
+  it("定義済みの描画方式は採用し、未知の値は既定値に落とす", () => {
+    expect(parseRendererParam("2d", "3d")).toBe("2d");
+    expect(parseRendererParam("3d", "2d")).toBe("3d");
+    expect(parseRendererParam("webgpu", "3d")).toBe("3d");
+    expect(parseRendererParam(null, "3d")).toBe("3d");
+  });
+});
+
 describe("loadConfig", () => {
   it("クエリパラメータから設定を構築する", () => {
-    const config = loadConfig(new URLSearchParams("blobs=30&seed=123&log=debug"));
+    const config = loadConfig(
+      new URLSearchParams("blobs=30&seed=123&log=debug&renderer=2d"),
+    );
     expect(config.initialBlobCount).toBe(30);
     expect(config.seed).toBe(123);
     expect(config.logLevel).toBe("debug");
+    expect(config.renderer).toBe("2d");
   });
 
   it("パラメータがなければ既定値を使う", () => {
