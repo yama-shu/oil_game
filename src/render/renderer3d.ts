@@ -3,11 +3,7 @@ import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment
 import { radiusOf } from "../core/blob";
 import type { Chopstick, WorldParams, WorldState } from "../core/world";
 import type { Vec2 } from "../core/vec2";
-import {
-  buildToppings,
-  createRimPatternTexture,
-  createSoupTexture,
-} from "./ramenDecor";
+import { createRimPatternTexture, createSoupTexture } from "./ramenDecor";
 import type { GameRenderer } from "./types";
 
 const RIPPLE_LIFETIME_SEC = 0.8;
@@ -287,8 +283,8 @@ function buildStaticScene(R: number): THREE.Group {
   rimPattern.position.y = R * 0.165;
   group.add(rimPattern);
 
-  // 具材 (チャーシュー・なると・ネギ・海苔)。見た目だけの飾り (#5)
-  group.add(buildToppings(R));
+  // 具材 (チャーシュー・なると・ネギ・海苔) は一旦見送り。
+  // 見た目の検討中のため、生成関数 buildToppings は ramenDecor.ts に残してある (#5)
 
   // 光源: 食べ物がおいしく見える暖色寄りの環境光 + キーライト (#5)
   group.add(new THREE.HemisphereLight(0xffe8c8, 0x40210f, 1.0));
