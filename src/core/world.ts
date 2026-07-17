@@ -28,8 +28,19 @@ export interface WorldParams {
   pokeRadius: number;
   /** 油の最高速度 (px/s)。発散防止のための安全弁 */
   maxSpeed: number;
-  /** 中心 (対流) に向かうごく弱い力。油が縁に張り付いたままになるのを防ぐ */
-  convection: number;
+  /**
+   * スープの流れ (漂い) の速さ (px/s)。
+   * 中心に収束する対流とは異なり、滑らかな流れ場に沿って漂わせるだけなので
+   * 放置しても油同士が自然に集まることはない (#3)
+   */
+  driftSpeed: number;
+  /**
+   * 接触寸前の油同士を押し返すクッションの強さ (px/s^2)。
+   * 漂いや縁の押し付け程度の弱い力では油が触れ合わないようにして、
+   * 放置での自然合体を防ぐ。箸の突きはこれより十分強いので、
+   * ユーザーが押し込んだときだけ合体する (#3)
+   */
+  repulsion: number;
 }
 
 /** 箸 (ポインタ) の現在の状態。null なら触れていない */
@@ -46,6 +57,11 @@ export interface WorldState {
   phase: GamePhase;
   /** プレイ開始からの経過秒 */
   elapsedSec: number;
+  /**
+   * 物理シミュレーションの通算時間 (秒)。流れ場の時間変化に使う。
+   * elapsedSec と違い、クリア後も進み続ける
+   */
+  simTimeSec: number;
   /** 箸を入れた (タッチした) 回数。入力レイヤから addPoke() で加算する */
   pokeCount: number;
   /** このフレームで発生した合体イベント (演出用) */
@@ -76,8 +92,9 @@ export function spawnBlobs(params: WorldParams, rng: Rng): OilBlob[] {
         x: params.bowlCenter.x + Math.cos(angle) * dist,
         y: params.bowlCenter.y + Math.sin(angle) * dist,
       };
+      // 生成間隔は広めに取る。漂いによる相対移動で偶発的に接触しないための余白 (#3)
       const overlapping = blobs.some(
-        (b) => distance(b.pos, pos) < radiusOf(b) + radius + 2,
+        (b) => distance(b.pos, pos) < radiusOf(b) + radius + 10,
       );
       if (!overlapping) {
         placed = pos;
@@ -98,6 +115,7 @@ export function createWorld(params: WorldParams, rng: Rng): WorldState {
     blobs: spawnBlobs(params, rng),
     phase: "playing",
     elapsedSec: 0,
+    simTimeSec: 0,
     pokeCount: 0,
     mergesThisFrame: [],
   };
@@ -115,6 +133,7 @@ export function stepWorld(
   dt: number,
 ): void {
   state.mergesThisFrame = [];
+  state.simTimeSec += dt;
   if (state.phase === "cleared") {
     // クリア後も油はゆらゆら漂わせるが、時間・カウントは進めない
     applyForcesAndMove(state, params, null, dt);
@@ -128,6 +147,40 @@ export function stepWorld(
   if (state.blobs.length === 1) {
     state.phase = "cleared";
   }
+}
+
+/**
+ * 流れ場の目標速度へ漸近させる係数。
+ * damping=0.25 の減衰率 |ln 0.25| ≈ 1.4 /s と釣り合わせ、
+ * 定常状態の漂い速度がおよそ driftSpeed になるようにしている
+ */
+const FLOW_FOLLOW_RATE = 1.4;
+
+/** 油同士のクッション (repulsion) が働き始める表面間のすき間 (px) */
+const CONTACT_CUSHION_PX = 8;
+
+/**
+ * スープの流れ場。位置と時刻から、その場所の流れの目標速度を返す。
+ * 波長を丼サイズ程度に取った正弦波の重ね合わせで作っており、
+ * - 空間的に滑らか: 近くの油はほぼ同じ速度で流れ、相対距離が保たれる
+ * - 時間変化する: 同じ場所でも流れの向きがゆっくり変わり、単調に見えない
+ * - 収束点を持たない: 中心対流のように1点へ集めてしまうことがない
+ */
+export function flowFieldAt(
+  pos: Vec2,
+  params: WorldParams,
+  timeSec: number,
+): Vec2 {
+  const L = params.bowlRadius * 1.2;
+  const x = (pos.x - params.bowlCenter.x) / L;
+  const y = (pos.y - params.bowlCenter.y) / L;
+  const t = timeSec;
+  const fx =
+    Math.sin(y * 2.1 + t * 0.5 + 1.3) + 0.6 * Math.sin(x * 1.4 + t * 0.33);
+  const fy =
+    Math.sin(x * 1.9 + t * 0.44) + 0.6 * Math.sin(y * 1.2 + t * 0.61 + 2.0);
+  // 振幅の最大値はおよそ 1.6 なので、最高流速が driftSpeed になるよう正規化する
+  return scale({ x: fx, y: fy }, params.driftSpeed / 1.6);
 }
 
 /** プレイ中に箸を入れた回数を記録する。ポインタダウン時に入力レイヤから呼ぶ */
@@ -149,22 +202,36 @@ function applyForcesAndMove(
   for (const blob of blobs) {
     let force: Vec2 = { x: 0, y: 0 };
 
-    // 表面張力: 近くの油同士はゆっくり引き合う (放置でも少しずつまとまる)
+    // 油同士の相互作用 (#3):
+    // - めり込み始めた油は表面張力で引き寄せ、合体しきい値まで吸い込む
+    // - 接触寸前 (すき間がクッション幅未満) の油は逆に押し返す。
+    //   漂い程度の弱い力ではすき間を越えられず、自然合体しない
     for (const other of blobs) {
       if (other.id === blob.id) continue;
       const d = distance(blob.pos, other.pos);
-      const range = (radiusOf(blob) + radiusOf(other)) * params.attractionRange;
-      if (d > 0 && d < range) {
-        const dir = normalize(sub(other.pos, blob.pos));
+      const sumRadius = radiusOf(blob) + radiusOf(other);
+      if (d <= 0) continue;
+      const dir = normalize(sub(other.pos, blob.pos));
+      if (d < sumRadius * params.attractionRange) {
         // 大きい油ほど強く引っ張る。距離が近いほど強い
         const strength = params.attraction * (other.area / (d * d));
         force = add(force, scale(dir, strength));
+      } else {
+        const gap = d - sumRadius;
+        if (gap < CONTACT_CUSHION_PX) {
+          const strength = params.repulsion * (1 - gap / CONTACT_CUSHION_PX);
+          force = add(force, scale(dir, -strength));
+        }
       }
     }
 
-    // 対流: 縁に張り付かないよう、中心へごく弱く流す
-    const toCenter = sub(params.bowlCenter, blob.pos);
-    force = add(force, scale(toCenter, params.convection));
+    // 漂い: 空間的に滑らかな時変の流れ場に沿ってゆっくり流す。
+    // 近くの油はほぼ同じ向きに流れるため相対距離が保たれ、
+    // 中心収束型の対流と違って放置で油が集まることはない (#3)
+    force = add(
+      force,
+      scale(flowFieldAt(blob.pos, params, state.simTimeSec), FLOW_FOLLOW_RATE),
+    );
 
     // 箸: 影響半径内の油を、箸の進行方向 + 箸から離れる方向に弾く
     if (chopstick) {

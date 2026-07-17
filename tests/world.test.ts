@@ -19,11 +19,12 @@ const params: WorldParams = {
   blobRadiusMax: 16,
   damping: 0.3,
   attraction: 2,
-  attractionRange: 3,
+  attractionRange: 1.0,
   pokeStrength: 120,
   pokeRadius: 24,
   maxSpeed: 500,
-  convection: 0.02,
+  driftSpeed: 12,
+  repulsion: 90,
 };
 
 function emptyState(): WorldState {
@@ -31,6 +32,7 @@ function emptyState(): WorldState {
     blobs: [],
     phase: "playing",
     elapsedSec: 0,
+    simTimeSec: 0,
     pokeCount: 0,
     mergesThisFrame: [],
   };
@@ -127,6 +129,32 @@ describe("stepWorld", () => {
       const d = distance(b.pos, params.bowlCenter);
       expect(d + radiusOf(b)).toBeLessThanOrEqual(params.bowlRadius + 0.01);
     }
+  });
+});
+
+describe("放置時の挙動 (#3 の回帰テスト)", () => {
+  it("60秒放置しても油が自然合体せず、勝手にクリアされない", () => {
+    const state = createWorld(params, createRng(42));
+    const initialCount = state.blobs.length;
+    for (let i = 0; i < 60 * 60; i++) {
+      stepWorld(state, params, null, 1 / 60);
+    }
+    expect(state.blobs.length).toBe(initialCount);
+    expect(state.phase).toBe("playing");
+  });
+
+  it("放置していても油は静止せず漂う", () => {
+    const state = createWorld(params, createRng(7));
+    const before = state.blobs.map((b) => ({ ...b.pos }));
+    for (let i = 0; i < 60 * 5; i++) {
+      stepWorld(state, params, null, 1 / 60);
+    }
+    // 少なくとも1つの油が目に見える距離 (2px 以上) 動いていること
+    const moved = state.blobs.some((b, i) => {
+      const p = before[i]!;
+      return Math.hypot(b.pos.x - p.x, b.pos.y - p.y) > 2;
+    });
+    expect(moved).toBe(true);
   });
 });
 

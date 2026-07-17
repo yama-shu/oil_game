@@ -14,6 +14,8 @@
  *     BASE_URL    ... 対象 URL (既定: http://localhost:5173)
  *     CHROME_PATH ... Chrome/Chromium 実行ファイル (既定: macOS の Google Chrome)
  *     OUT_DIR     ... スクリーンショット出力先 (既定: ./smoke-output)
+ *     EXTRA_QUERY ... URL に追加するクエリ (例: "&renderer=2d")
+ *     IDLE_SEC    ... 放置検証の秒数 (既定: 10)
  */
 import { mkdirSync } from "node:fs";
 import { chromium } from "playwright-core";
@@ -57,12 +59,20 @@ try {
   await page.goto(`${BASE_URL}/?seed=42&blobs=${INITIAL_BLOBS}${query}`);
   await page.waitForTimeout(1500);
 
-  // 表面張力により放置でも少しずつ合体する仕様のため、厳密に一致ではなく
-  // 「指定個数以下・かつ大半が残っている」ことを確認する
   const initialCount = parseBlobCount(await page.textContent("#app"));
   await page.screenshot({ path: `${OUT_DIR}/1_initial.png` });
-  if (initialCount > INITIAL_BLOBS || initialCount < INITIAL_BLOBS / 2) {
-    throw new Error(`初期の油の数が不正: ${initialCount} (期待: ${INITIAL_BLOBS}個前後)`);
+  if (initialCount !== INITIAL_BLOBS) {
+    throw new Error(`初期の油の数が不正: ${initialCount} (期待: ${INITIAL_BLOBS})`);
+  }
+
+  // 放置検証 (#3): 操作しない間は油が自然合体しないこと
+  const idleSec = Number(process.env.IDLE_SEC ?? 10);
+  await page.waitForTimeout(idleSec * 1000);
+  const idleCount = parseBlobCount(await page.textContent("#app"));
+  if (idleCount !== INITIAL_BLOBS) {
+    throw new Error(
+      `${idleSec}秒放置で油が自然合体した: ${INITIAL_BLOBS} -> ${idleCount}`,
+    );
   }
 
   // 丼の中心付近を横切るドラッグ (箸でつつく) を3回行う
@@ -93,12 +103,12 @@ try {
     );
   }
 
-  // リセットで初期個数付近に戻ること (リセット直後にも自然合体が起こり得る)
+  // リセットで初期個数に戻ること (#3 対応後は自然合体しないため厳密に判定できる)
   await page.click("text=やり直す");
   await page.waitForTimeout(500);
   const resetCount = parseBlobCount(await page.textContent("#app"));
   await page.screenshot({ path: `${OUT_DIR}/3_after_reset.png` });
-  if (resetCount <= afterCount || resetCount > INITIAL_BLOBS) {
+  if (resetCount !== INITIAL_BLOBS) {
     throw new Error(`リセット後の油の数が不正: ${resetCount}`);
   }
 
