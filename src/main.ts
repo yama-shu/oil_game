@@ -68,11 +68,13 @@ function main(): void {
       blobRadiusMax: bowlRadius * 0.09,
       damping: 0.25,
       attraction: 1.6,
-      attractionRange: 2.4,
+      // 表面が触れ合うまで表面張力は働かせない。放置クリア防止 (#3)
+      attractionRange: 1.0,
       pokeStrength: 140,
       pokeRadius: bowlRadius * 0.12,
       maxSpeed: bowlRadius * 2.2,
-      convection: 0.06,
+      driftSpeed: bowlRadius * 0.07,
+      repulsion: 90,
     };
   }
 
