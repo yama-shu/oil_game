@@ -3,6 +3,11 @@ import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment
 import { radiusOf } from "../core/blob";
 import type { Chopstick, WorldParams, WorldState } from "../core/world";
 import type { Vec2 } from "../core/vec2";
+import {
+  buildToppings,
+  createRimPatternTexture,
+  createSoupTexture,
+} from "./ramenDecor";
 import type { GameRenderer } from "./types";
 
 const RIPPLE_LIFETIME_SEC = 0.8;
@@ -270,53 +275,28 @@ function buildStaticScene(R: number): THREE.Group {
   );
   group.add(soup);
 
-  // 光源: 暖色の環境光 + 上からのキーライト
-  group.add(new THREE.HemisphereLight(0xfff2dd, 0x40210f, 0.9));
-  const key = new THREE.DirectionalLight(0xffffff, 1.4);
+  // 雷紋: 丼の縁の上面に貼る円環 (#5)
+  const rimPattern = new THREE.Mesh(
+    new THREE.RingGeometry(R * 1.03, R * 1.17, 96).rotateX(-Math.PI / 2),
+    new THREE.MeshStandardMaterial({
+      map: createRimPatternTexture(),
+      transparent: true,
+      roughness: 0.4,
+    }),
+  );
+  rimPattern.position.y = R * 0.165;
+  group.add(rimPattern);
+
+  // 具材 (チャーシュー・なると・ネギ・海苔)。見た目だけの飾り (#5)
+  group.add(buildToppings(R));
+
+  // 光源: 食べ物がおいしく見える暖色寄りの環境光 + キーライト (#5)
+  group.add(new THREE.HemisphereLight(0xffe8c8, 0x40210f, 1.0));
+  const key = new THREE.DirectionalLight(0xfff1dc, 1.5);
   key.position.set(R * 0.6, R * 1.8, R * 0.8);
   group.add(key);
 
   return group;
-}
-
-/** スープの模様 (グラデーション + 沈んだ麺) を Canvas で描いてテクスチャ化する */
-function createSoupTexture(): THREE.CanvasTexture {
-  const size = 512;
-  const canvas = document.createElement("canvas");
-  canvas.width = size;
-  canvas.height = size;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) {
-    throw new Error("スープテクスチャ用の 2D context を取得できませんでした");
-  }
-
-  const grad = ctx.createRadialGradient(
-    size * 0.42,
-    size * 0.4,
-    size * 0.05,
-    size * 0.5,
-    size * 0.5,
-    size * 0.55,
-  );
-  grad.addColorStop(0, "#e08e1f");
-  grad.addColorStop(0.75, "#b5620f");
-  grad.addColorStop(1, "#c26f14");
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, size, size);
-
-  ctx.strokeStyle = "rgba(245, 222, 150, 0.22)";
-  ctx.lineWidth = 7;
-  for (let i = 0; i < 5; i++) {
-    const y = size * 0.2 + i * size * 0.15;
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.bezierCurveTo(size * 0.3, y + 24, size * 0.7, y - 24, size, y + 10);
-    ctx.stroke();
-  }
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  return texture;
 }
 
 /** 箸: 先端がタッチ位置に来るよう、原点から斜め上に伸びる2本の棒 */

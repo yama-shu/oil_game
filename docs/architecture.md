@@ -18,7 +18,8 @@ src/
 ├── render/          描画層 (状態を読むだけで変更しない)
 │   ├── types.ts     GameRenderer インターフェース
 │   ├── renderer2d.ts  Canvas 2D 実装 (フォールバック用)
-│   └── renderer3d.ts  three.js 実装 (既定)
+│   ├── renderer3d.ts  three.js 実装 (既定)
+│   └── ramenDecor.ts  ラーメンの装飾 (スープ・雷紋・具材)。テクスチャは Canvas 生成
 ├── input/           タッチ/マウス → 箸の位置・速度への変換
 └── ui/              HUD (DOM)。スコア表示・リセット・ベスト記録
 ```
