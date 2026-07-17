@@ -75,19 +75,24 @@ function main(): void {
       maxSpeed: bowlRadius * 2.2,
       driftSpeed: bowlRadius * 0.07,
       repulsion: 90,
+      // 素早いフリック (画面幅を0.5秒未満で横切る程度) だけが分裂になる速さ
+      splitSpeed: bowlRadius * 3,
     };
   }
 
   let cssWidth = window.innerWidth;
   let cssHeight = window.innerHeight;
   let params = computeParams(cssWidth, cssHeight);
-  let world: WorldState = createWorld(params, createRng(config.seed));
+  // 初期配置と分裂の分割比の両方に同じ乱数列を使う
+  let rng = createRng(config.seed);
+  let world: WorldState = createWorld(params, rng);
   logger.debug("初期配置", { seed: config.seed, blobs: world.blobs.length });
 
   function restart(): void {
     // 再スタートのたびに違う配置になるよう、シードは現在時刻から取り直す
     const seed = Date.now() % 2 ** 31;
-    world = createWorld(params, createRng(seed));
+    rng = createRng(seed);
+    world = createWorld(params, rng);
     hud.reset();
     logger.info("リスタートしました", { seed });
   }
@@ -136,12 +141,16 @@ function main(): void {
     const nowSec = now / 1000;
 
     const chopstick = input.sample(dt, (p) => renderer.screenToWorld(p));
-    stepWorld(world, params, chopstick, dt);
+    stepWorld(world, params, chopstick, dt, rng);
 
-    // 合体の瞬間に波紋を出す (大きい油ほど大きい波紋)
+    // 合体・分裂の瞬間に波紋を出す (大きい油ほど大きい波紋)
     for (const merge of world.mergesThisFrame) {
       renderer.addRipple(merge.pos, nowSec, radiusOf(merge) * 2.5);
       logger.debug("合体", { remaining: world.blobs.length });
+    }
+    for (const split of world.splitsThisFrame) {
+      renderer.addRipple(split.pos, nowSec, radiusOf(split) * 3);
+      logger.debug("分裂", { remaining: world.blobs.length });
     }
     if (world.phase === "cleared" && world.mergesThisFrame.length > 0) {
       logger.info("クリア", {

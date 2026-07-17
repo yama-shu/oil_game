@@ -13,6 +13,11 @@ export interface OilBlob {
   area: number;
   /** 描画のゆらぎ用の位相 (物理には影響しない) */
   wobblePhase: number;
+  /**
+   * 分裂直後の不応時間 (秒)。残っている間は合体も再分裂もしない。
+   * 分裂した破片が離れる前に元に戻ってしまうのを防ぐ (#4)
+   */
+  cooldownSec: number;
 }
 
 export function radiusOf(blob: Pick<OilBlob, "area">): number {
@@ -32,6 +37,7 @@ export function createBlob(pos: Vec2, radius: number, wobblePhase = 0): OilBlob 
     vel: { x: 0, y: 0 },
     area: areaFromRadius(radius),
     wobblePhase,
+    cooldownSec: 0,
   };
 }
 
@@ -55,5 +61,44 @@ export function mergeBlobs(a: OilBlob, b: OilBlob): OilBlob {
     },
     area: totalArea,
     wobblePhase: a.area >= b.area ? a.wobblePhase : b.wobblePhase,
+    cooldownSec: 0,
   };
+}
+
+/**
+ * 1つの油を2つに分裂させる (#4)。合体の逆操作。
+ * - 面積: 合計を保存し、ratio : (1 - ratio) で分ける
+ * - 位置: 破片同士がすぐ再合体しない距離まで direction の向きに離す
+ * - 速度: 元の速度を引き継ぎ、direction の向きに separationSpeed を加える
+ * direction は正規化済みであること。
+ */
+export function splitBlob(
+  blob: OilBlob,
+  ratio: number,
+  direction: Vec2,
+  separationSpeed: number,
+  cooldownSec: number,
+): [OilBlob, OilBlob] {
+  const areas: [number, number] = [blob.area * ratio, blob.area * (1 - ratio)];
+  const radii = areas.map((a) => Math.sqrt(a / Math.PI));
+  // 合体しきい値 (0.85) の外側に出るよう、半径の和より少し広く離す
+  const gap = (radii[0]! + radii[1]!) * 1.05;
+  const fragments = areas.map((area, i) => {
+    const sign = i === 0 ? 1 : -1;
+    return {
+      id: nextId++,
+      pos: {
+        x: blob.pos.x + direction.x * gap * sign * (radii[1 - i]! / (radii[0]! + radii[1]!)),
+        y: blob.pos.y + direction.y * gap * sign * (radii[1 - i]! / (radii[0]! + radii[1]!)),
+      },
+      vel: {
+        x: blob.vel.x + direction.x * separationSpeed * sign,
+        y: blob.vel.y + direction.y * separationSpeed * sign,
+      },
+      area,
+      wobblePhase: blob.wobblePhase + i * 1.7,
+      cooldownSec,
+    };
+  });
+  return [fragments[0]!, fragments[1]!];
 }

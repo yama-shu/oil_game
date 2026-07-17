@@ -1,9 +1,23 @@
 import type { OilBlob } from "./blob";
-import { createBlob, mergeBlobs, radiusOf } from "./blob";
+import {
+  areaFromRadius,
+  createBlob,
+  mergeBlobs,
+  radiusOf,
+  splitBlob,
+} from "./blob";
 import type { Rng } from "./rng";
 import { randRange } from "./rng";
 import type { Vec2 } from "./vec2";
-import { add, clampLength, distance, normalize, scale, sub } from "./vec2";
+import {
+  add,
+  clampLength,
+  distance,
+  length,
+  normalize,
+  scale,
+  sub,
+} from "./vec2";
 
 /** 物理挙動のチューニングパラメータ。値の根拠は docs/architecture.md を参照 */
 export interface WorldParams {
@@ -41,6 +55,12 @@ export interface WorldParams {
    * ユーザーが押し込んだときだけ合体する (#3)
    */
   repulsion: number;
+  /**
+   * 分裂が起こる箸の速さのしきい値 (px/s)。
+   * これより速く動く箸が油に触れると油が2つに割れる (#4)。
+   * ゆっくり押す操作 (集める) と素早く突く操作 (壊す) を分ける境界
+   */
+  splitSpeed: number;
 }
 
 /** 箸 (ポインタ) の現在の状態。null なら触れていない */
@@ -66,11 +86,19 @@ export interface WorldState {
   pokeCount: number;
   /** このフレームで発生した合体イベント (演出用) */
   mergesThisFrame: MergeEvent[];
+  /** このフレームで発生した分裂イベント (演出用) */
+  splitsThisFrame: SplitEvent[];
 }
 
 export interface MergeEvent {
   pos: Vec2;
   /** 合体後の面積 */
+  area: number;
+}
+
+export interface SplitEvent {
+  pos: Vec2;
+  /** 分裂前の面積 */
   area: number;
 }
 
@@ -118,6 +146,7 @@ export function createWorld(params: WorldParams, rng: Rng): WorldState {
     simTimeSec: 0,
     pokeCount: 0,
     mergesThisFrame: [],
+    splitsThisFrame: [],
   };
 }
 
@@ -131,9 +160,14 @@ export function stepWorld(
   params: WorldParams,
   chopstick: Chopstick | null,
   dt: number,
+  rng: Rng,
 ): void {
   state.mergesThisFrame = [];
+  state.splitsThisFrame = [];
   state.simTimeSec += dt;
+  for (const blob of state.blobs) {
+    blob.cooldownSec = Math.max(0, blob.cooldownSec - dt);
+  }
   if (state.phase === "cleared") {
     // クリア後も油はゆらゆら漂わせるが、時間・カウントは進めない
     applyForcesAndMove(state, params, null, dt);
@@ -142,11 +176,61 @@ export function stepWorld(
 
   state.elapsedSec += dt;
   applyForcesAndMove(state, params, chopstick, dt);
+  trySplits(state, params, chopstick, rng);
   resolveMerges(state);
 
   if (state.blobs.length === 1) {
     state.phase = "cleared";
   }
+}
+
+/** 分裂した破片の不応時間。この間は合体も再分裂もしない */
+const SPLIT_COOLDOWN_SEC = 0.5;
+
+/**
+ * 速く動く箸が触れた油を2つに割る (#4)。
+ * - 分裂後の小さい方の破片が最小半径 (blobRadiusMin) を下回る場合は割らない
+ *   (無限に細かく分裂するのを防ぐ)
+ * - 割れる向きは箸の進行方向と垂直 (箸で「切る」イメージ)
+ * - 分割比は 40:60〜50:50 のランダム
+ */
+function trySplits(
+  state: WorldState,
+  params: WorldParams,
+  chopstick: Chopstick | null,
+  rng: Rng,
+): void {
+  if (chopstick === null) return;
+  const speed = length(chopstick.vel);
+  if (speed < params.splitSpeed) return;
+
+  const minFragmentArea = areaFromRadius(params.blobRadiusMin);
+  const fragments: OilBlob[] = [];
+  for (let i = state.blobs.length - 1; i >= 0; i--) {
+    const blob = state.blobs[i]!;
+    if (blob.cooldownSec > 0) continue;
+    const d = distance(blob.pos, chopstick.pos);
+    if (d >= params.pokeRadius + radiusOf(blob)) continue;
+
+    const ratio = randRange(rng, 0.4, 0.6);
+    if (blob.area * Math.min(ratio, 1 - ratio) < minFragmentArea) continue;
+
+    const cutDirection = normalize({
+      x: -chopstick.vel.y,
+      y: chopstick.vel.x,
+    });
+    const [a, b] = splitBlob(
+      blob,
+      ratio,
+      cutDirection,
+      params.pokeStrength * 0.9,
+      SPLIT_COOLDOWN_SEC,
+    );
+    state.blobs.splice(i, 1);
+    fragments.push(a, b);
+    state.splitsThisFrame.push({ pos: { ...blob.pos }, area: blob.area });
+  }
+  state.blobs.push(...fragments);
 }
 
 /**
@@ -286,6 +370,8 @@ export function resolveMerges(state: WorldState): void {
       for (let j = i + 1; j < blobs.length; j++) {
         const a = blobs[i]!;
         const b = blobs[j]!;
+        // 分裂直後の破片は不応時間が明けるまで合体させない (#4)
+        if (a.cooldownSec > 0 || b.cooldownSec > 0) continue;
         const d = distance(a.pos, b.pos);
         // 縁が触れただけでは合体せず、少しめり込んだら合体する
         // (すれ違いで即合体すると操作の余地がなくなるため)

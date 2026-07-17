@@ -4,9 +4,11 @@
  * 単体テストでは検出できない「実際にブラウザで動くか」を自動確認する。
  * タッチ操作 (ドラッグ) をシミュレートし、以下を検証する:
  *   1. 初期状態で指定個数の油が表示される
- *   2. つつくと油が合体して数が減る
- *   3. リセットで初期状態に戻る
- *   4. コンソールエラーが発生しない
+ *   2. 放置しても油が自然合体しない (#3)
+ *   3. ゆっくりつつくと油が合体して数が減る
+ *   4. 速くフリックすると油が分裂して数が増える (#4)
+ *   5. リセットで初期状態に戻る
+ *   6. コンソールエラーが発生しない
  *
  * 使い方:
  *   npm run dev を起動した状態で `npm run smoke`
@@ -75,10 +77,11 @@ try {
     );
   }
 
-  // 丼の中心付近を横切るドラッグ (箸でつつく) を3回行う
+  // 丼の中心付近を横切るドラッグ (箸でつつく) を3回行う。
+  // 分裂しきい値 (#4) を超えないよう、移動はゆっくり (少しずつ) 行う
   const cx = 195;
   const cy = 422;
-  async function drag(from, to, steps = 20) {
+  async function drag(from, to, steps) {
     await page.mouse.move(from[0], from[1]);
     await page.mouse.down();
     for (let i = 1; i <= steps; i++) {
@@ -90,10 +93,11 @@ try {
     }
     await page.mouse.up();
   }
-  await drag([cx - 120, cy], [cx + 120, cy]);
-  await drag([cx + 100, cy - 100], [cx - 100, cy + 100]);
-  await drag([cx, cy - 130], [cx, cy + 130]);
-  await page.waitForTimeout(2500); // 表面張力で寄って合体するのを待つ
+  const SLOW = 40; // 1ステップ約6px ≒ 360px/s: 分裂しない速さ
+  await drag([cx - 120, cy], [cx + 120, cy], SLOW);
+  await drag([cx + 100, cy - 100], [cx - 100, cy + 100], SLOW);
+  await drag([cx, cy - 130], [cx, cy + 130], SLOW);
+  await page.waitForTimeout(2500); // 押し込まれた油が合体しきるのを待つ
 
   const afterCount = parseBlobCount(await page.textContent("#app"));
   await page.screenshot({ path: `${OUT_DIR}/2_after_pokes.png` });
@@ -103,11 +107,32 @@ try {
     );
   }
 
+  // 分裂検証 (#4): 速いフリックで油が割れて数が増えること。
+  // 1ステップ約30px ≒ 1800px/s で、しきい値を大きく超える速さ。
+  // 油の位置は毎回変わるため、丼全体をカバーする複数のラインを
+  // 順にフリックし、分裂が観測できた時点で打ち切る
+  const FAST = 8;
+  let afterFlickCount = afterCount;
+  for (const offset of [0, -40, 40, -80, 80, -110, 110]) {
+    const leftToRight = offset % 80 === 0;
+    const [x1, x2] = leftToRight ? [cx - 130, cx + 130] : [cx + 130, cx - 130];
+    await drag([x1, cy + offset], [x2, cy + offset], FAST);
+    await page.waitForTimeout(700); // 不応時間 (0.5s) 明けを待つ
+    afterFlickCount = parseBlobCount(await page.textContent("#app"));
+    if (afterFlickCount > afterCount) break;
+  }
+  await page.screenshot({ path: `${OUT_DIR}/3_after_flicks.png` });
+  if (afterFlickCount <= afterCount) {
+    throw new Error(
+      `速いフリックでも油が分裂していない: ${afterCount} -> ${afterFlickCount}`,
+    );
+  }
+
   // リセットで初期個数に戻ること (#3 対応後は自然合体しないため厳密に判定できる)
   await page.click("text=やり直す");
   await page.waitForTimeout(500);
   const resetCount = parseBlobCount(await page.textContent("#app"));
-  await page.screenshot({ path: `${OUT_DIR}/3_after_reset.png` });
+  await page.screenshot({ path: `${OUT_DIR}/4_after_reset.png` });
   if (resetCount !== INITIAL_BLOBS) {
     throw new Error(`リセット後の油の数が不正: ${resetCount}`);
   }
@@ -117,7 +142,7 @@ try {
   }
 
   console.log(
-    `smoke test OK: 油 ${initialCount} -> ${afterCount} -> reset ${resetCount}, コンソールエラーなし`,
+    `smoke test OK: 油 ${initialCount} -> 合体 ${afterCount} -> 分裂 ${afterFlickCount} -> reset ${resetCount}, コンソールエラーなし`,
   );
 } finally {
   await browser.close();
